@@ -1,19 +1,19 @@
-# Direct Input Tester
+# SDL3 Input Tester
 
 ![Direct Input Tester screenshot](docs/image.png)
 
-Direct Input Tester is a desktop app built with .NET and Avalonia to inspect and test DirectInput devices on Windows.
+SDL3 Input Tester is a desktop app built with .NET and Avalonia to inspect and test joystick devices on Windows.
 
-Its main purpose is to act as a practical **button and axis tester** for any DInput-compatible device, including:
+Its main purpose is to act as a practical **button and axis tester** for SDL3 joystick-compatible devices, including:
 
 - Joysticks
 - Flight sticks
 - Steering wheels
-- Other DirectInput controllers
+- Other joystick-class controllers supported by SDL3
 
 ## What it does
 
-- Detects connected DInput devices
+- Detects connected SDL3 joystick devices
 - Lets you pick a device and open a live test view
 - Shows real-time button states
 - Shows real-time axis values and movement bars

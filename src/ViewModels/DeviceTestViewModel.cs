@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using DInputTester.Models;
 using DInputTester.Services;
-using Vortice.DirectInput;
 
 namespace DInputTester.ViewModels;
 
@@ -15,7 +14,7 @@ public partial class DeviceTestViewModel : ViewModelBase, IDisposable
 
     private readonly MainWindowViewModel _mainVm;
     private readonly DirectInputService _inputService;
-    private readonly IDirectInputDevice8? _device;
+    private readonly IntPtr _device;
     private readonly DispatcherTimer _timer;
     private bool _disposed;
 
@@ -35,9 +34,9 @@ public partial class DeviceTestViewModel : ViewModelBase, IDisposable
         foreach (var name in AxisNames)
             Axes.Add(new AxisStateModel(name));
 
-        _device = _inputService.AcquireDevice(deviceInfo.InstanceGuid);
+        _device = _inputService.AcquireDevice(deviceInfo.InstanceId);
 
-        if (_device is null)
+        if (_device == IntPtr.Zero)
         {
             StatusMessage = "Failed to acquire the device.";
         }
@@ -46,7 +45,7 @@ public partial class DeviceTestViewModel : ViewModelBase, IDisposable
             StatusMessage = string.Empty;
             // Initial poll to discover available buttons.
             var initial = _inputService.PollState(_device);
-            int buttonCount = 128; // DirectInput joystick state supports up to 128 buttons.
+            int buttonCount = 128; // Conservative fallback when initial poll data is unavailable.
             if (initial.HasValue)
             {
                 buttonCount = Math.Max(1, initial.Value.Buttons.Length);
@@ -64,7 +63,7 @@ public partial class DeviceTestViewModel : ViewModelBase, IDisposable
 
     private void OnTick(object? sender, EventArgs e)
     {
-        if (_device is null) return;
+        if (_device == IntPtr.Zero) return;
 
         var result = _inputService.PollState(_device);
         if (result is null) return;
@@ -97,8 +96,7 @@ public partial class DeviceTestViewModel : ViewModelBase, IDisposable
         if (_disposed) return;
         _disposed = true;
         _timer.Stop();
-        _device?.Unacquire();
-        _device?.Dispose();
+        _inputService.ReleaseDevice(_device);
         _inputService.Dispose();
     }
 }

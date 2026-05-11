@@ -3,6 +3,6 @@ using System;
 namespace DInputTester.Models;
 
 public sealed record GameDeviceInfo(
-    Guid InstanceGuid,
+    uint InstanceId,
     string ProductName,
     string InstanceName);

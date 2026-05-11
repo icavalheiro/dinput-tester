@@ -1,102 +1,92 @@
 using System;
 using System.Collections.Generic;
 using DInputTester.Models;
-using Vortice.DirectInput;
+using SDL3;
 
 namespace DInputTester.Services;
 
 public sealed class DirectInputService : IDisposable
 {
-    private IDirectInput8 _directInput;
+    private static readonly string[] AxisNames = ["X", "Y", "Z", "RX", "RY", "RZ", "Slider1", "Slider2"];
     private bool _disposed;
 
     public DirectInputService()
     {
-        _directInput = DInput.DirectInput8Create();
+        SDL.InitSubSystem(SDL.InitFlags.Joystick);
     }
 
-    /// <summary>Enumerates all attached HID game controllers via DirectInput.</summary>
+    /// <summary>Enumerates all attached joystick devices via SDL3.</summary>
     public List<GameDeviceInfo> EnumerateDevices()
     {
         var result = new List<GameDeviceInfo>();
 
-        var infos = _directInput.GetDevices(DeviceClass.GameControl, DeviceEnumerationFlags.AttachedOnly);
-        foreach (var info in infos)
+        var ids = SDL.GetJoysticks(out _);
+        if (ids is null)
+            return result;
+
+        foreach (var instanceId in ids)
         {
+            var name = SDL.GetJoystickNameForID(instanceId) ?? "Unknown";
+
             result.Add(new GameDeviceInfo(
-                info.InstanceGuid,
-                info.ProductName?.Trim('\0') ?? "Unknown",
-                info.InstanceName?.Trim('\0') ?? "Unknown"));
+                instanceId,
+                name,
+                $"Joystick #{instanceId}"));
         }
 
         return result;
     }
 
-    /// <summary>Creates and acquires a joystick device. Caller is responsible for disposing.</summary>
-    public IDirectInputDevice8? AcquireDevice(Guid instanceGuid)
+    /// <summary>Opens a joystick device. Caller is responsible for closing it.</summary>
+    public IntPtr AcquireDevice(uint instanceId)
     {
-        var device = _directInput.CreateDevice(instanceGuid);
-        if (device is null) return null;
-
-        device.SetDataFormat<RawJoystickState>();
-        device.SetCooperativeLevel(IntPtr.Zero, CooperativeLevel.NonExclusive | CooperativeLevel.Background);
-
-        var hr = device.Acquire();
-        if (hr.Failure)
-        {
-            device.Dispose();
-            return null;
-        }
-
-        return device;
+        return SDL.OpenJoystick(instanceId);
     }
 
     /// <summary>
-    /// Polls the device and returns buttons and axes.
-    /// Axes are normalized to [-1.0, 1.0].
+    /// Polls the device and returns buttons and axes mapped to legacy axis names.
+    /// Axis values are normalized to [-1.0, 1.0].
     /// Returns null if polling fails (e.g. device disconnected).
     /// </summary>
-    public (bool[] Buttons, Dictionary<string, float> Axes)? PollState(IDirectInputDevice8 device)
+    public (bool[] Buttons, Dictionary<string, float> Axes)? PollState(IntPtr joystick)
     {
-        var hr = device.Poll();
-        if (hr.Failure)
-        {
-            device.Acquire();
+        if (joystick == IntPtr.Zero)
             return null;
-        }
 
-        JoystickState state;
-        try
-        {
-            state = device.GetCurrentJoystickState();
-        }
-        catch
-        {
+        SDL.UpdateJoysticks();
+        if (!SDL.JoystickConnected(joystick))
             return null;
+
+        var buttonCount = Math.Max(0, SDL.GetNumJoystickButtons(joystick));
+        var axisCount = Math.Max(0, SDL.GetNumJoystickAxes(joystick));
+
+        var buttons = new bool[buttonCount];
+        for (int i = 0; i < buttonCount; i++)
+            buttons[i] = SDL.GetJoystickButton(joystick, i);
+
+        var axes = new Dictionary<string, float>(AxisNames.Length);
+        for (int i = 0; i < AxisNames.Length; i++)
+        {
+            var raw = i < axisCount ? SDL.GetJoystickAxis(joystick, i) : (short)0;
+            axes[AxisNames[i]] = Normalize(raw);
         }
-
-        var buttons = state.Buttons;
-
-        var axes = new Dictionary<string, float>(8);
-        axes["X"]       = Normalize(state.X);
-        axes["Y"]       = Normalize(state.Y);
-        axes["Z"]       = Normalize(state.Z);
-        axes["RX"]      = Normalize(state.RotationX);
-        axes["RY"]      = Normalize(state.RotationY);
-        axes["RZ"]      = Normalize(state.RotationZ);
-        axes["Slider1"] = Normalize(state.Sliders[0]);
-        axes["Slider2"] = Normalize(state.Sliders[1]);
 
         return (buttons, axes);
     }
 
-    private static float Normalize(int rawValue) =>
-        Math.Clamp((rawValue - 32767f) / 32768f, -1f, 1f);
+    public void ReleaseDevice(IntPtr joystick)
+    {
+        if (joystick != IntPtr.Zero)
+            SDL.CloseJoystick(joystick);
+    }
+
+    private static float Normalize(short rawValue) =>
+        rawValue >= 0 ? rawValue / 32767f : rawValue / 32768f;
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
-        _directInput.Dispose();
+        SDL.QuitSubSystem(SDL.InitFlags.Joystick);
     }
 }
